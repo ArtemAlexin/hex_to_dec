@@ -1,11 +1,11 @@
 section         .text
  
+                global          print
  
+print:
+                pushad
  
-                global          _start
- 
-_start:
-                xor     	ebp,  ebp
+                xor     ebp,  ebp
  
                 sub             esp, 16
  
@@ -13,22 +13,42 @@ _start:
  
                 mov             ecx, 4
  
-                call            read_long_hex
+                mov             esi, [esp + 24 + 32] ; esi <- src
  
-                call      	correct
+                call            read_long_hex ; read esi -> edi
  
-                call        	write_minus
+                call        correct
  
-                call            write_long_dec
+                mov             esi, [esp + 20 + 32] ; esi <- dst
  
-                mov             al, 0x0a
+                mov             al, byte[esi]
+ 
+                call        write_minus ; write '-' -> esi
+ 
+                call            write_long_dec ; write edi -> esi
+ 
+ 
+                mov             eax, 0
  
                 call            write_char
  
-                jmp             exit
+ 
+                add             esp, 16
+ 
+                popad
+ 
+                ret
  
  
-
+; checks if a long number is a zero
+ 
+;    edi -- argument (long number)
+ 
+;    ecx -- length of long number in qwords
+ 
+; result:
+ 
+;    ZF=1 if zero
  
 is_zero:
  
@@ -41,7 +61,6 @@ is_zero:
                 xor             eax, eax
  
                 rep scasd
- 
  
  
                 pop             ecx
@@ -58,7 +77,7 @@ write_minus:
  
                 jz      .label1
  
-                call    is_zero
+                call            is_zero
  
                 jz      .label1
  
@@ -66,7 +85,7 @@ write_minus:
  
                 mov     al,  "-"
  
-                call    write_char
+                call            write_char
  
                 pop     ecx
 .label1:
@@ -74,16 +93,16 @@ write_minus:
                 ret
  
 correct:
-                push    edx
-                push    ebx
+                push            edx
+                push            ebx
  
-                push    ecx
+                push            ecx
 ;ebx -> 2^31
                 mov     ebx, 2147483648
  
                 mov     ecx, 3
  
-                call    is_zero
+                call            is_zero
  
                 jnz     .not__int128_t_min
  
@@ -103,19 +122,26 @@ correct:
  
                 mov     edx, [edi + 12]
  
-                test    edx, ebx
+                test            edx, ebx
  
                 pop     ecx
  
-                jz      .correct
+                jz              .correct
  
-                call    negate
+                call            negate
 .correct:
                 pop     ebx
                 pop     edx
                 ret
  
-
+; negate number in two"s compliment code
+ 
+;   edi -- address of long number
+ 
+;   ecx -- length of number
+ 
+;   ebp -- sign
+ 
 negate:
  
                 ;~number
@@ -132,13 +158,11 @@ negate:
  
                 mov             [edi], eax
  
-                add             edi,   4
+                add     edi,   4
  
                 dec             ecx
  
                 jnz             .loop
- 
- 
  
                 pop             ecx
  
@@ -152,52 +176,22 @@ negate:
  
                 call            add_long_short
  
- 
                 not             ebp
  
                 ret
  
  
+; adds 32-bit number to long number
  
-
+;    edi -- address of summand #1 (long number)
  
-add_long_long:
+;    eax -- summand #2 (32-bit unsigned)
  
-                push            edi
+;    ecx -- length of long number in qwords
  
-                push            esi
+; result:
  
-                push            ecx
- 
-                clc
- 
-.loop:
- 
-                mov             eax, [esi]
- 
-                lea             esi, [esi + 4]
- 
-                adc             [edi], eax
- 
-                lea             edi, [edi + 4]
- 
-                dec             ecx
- 
-                jnz             .loop
- 
- 
- 
-                pop             ecx
- 
-                pop             esi
- 
-                pop             edi
- 
-                ret
- 
- 
- 
-
+;    sum is written to rdi
  
 add_long_short:
  
@@ -206,8 +200,6 @@ add_long_short:
                 push            ecx
  
                 push            edx
- 
- 
  
                 xor             edx, edx
  
@@ -227,8 +219,6 @@ add_long_short:
  
                 jnz             .loop
  
- 
- 
                 pop             edx
  
                 pop             ecx
@@ -239,7 +229,17 @@ add_long_short:
  
  
  
-
+; multiplies long number by a short
+ 
+;    edi -- address of multiplier #1 (long number)
+ 
+;    ebx -- multiplier #2 (32-bit unsigned)
+ 
+;    ecx -- length of long number in qwords
+ 
+; result:
+ 
+;    product is written to edi
  
 mul_long_short:
  
@@ -249,7 +249,7 @@ mul_long_short:
  
                 push            ecx
  
- 
+                push            esi
  
                 xor             esi, esi
  
@@ -273,7 +273,7 @@ mul_long_short:
  
                 jnz             .loop
  
- 
+                pop             esi
  
                 pop             ecx
  
@@ -285,6 +285,20 @@ mul_long_short:
  
  
  
+; divides long number by a short
+ 
+;    edi -- address of dividend (long number)
+ 
+;    ebx -- divisor (32-bit unsigned)
+ 
+;    ecx -- length of long number in qwords
+ 
+; result:
+ 
+;    quotient is written to edi
+ 
+;    edx -- remainder
+ 
 div_long_short:
  
                 push            edi
@@ -293,12 +307,9 @@ div_long_short:
  
                 push            ecx
  
- 
                 lea             edi, [edi + 4 * ecx - 4]
  
                 xor             edx, edx
- 
- 
  
 .loop:
  
@@ -314,8 +325,6 @@ div_long_short:
  
                 jnz             .loop
  
- 
- 
                 pop             ecx
  
                 pop             eax
@@ -325,6 +334,11 @@ div_long_short:
                 ret
  
  
+; assigns a zero to long number
+ 
+;    edi -- argument (long number)
+ 
+;    ecx -- length of long number in dwords
  
 set_zero:
  
@@ -334,13 +348,9 @@ set_zero:
  
                 push            ecx
  
- 
- 
                 xor             eax, eax
  
                 rep stosd
- 
- 
  
                 pop             ecx
  
@@ -350,8 +360,7 @@ set_zero:
  
                 ret
  
- 
- 
+; convert eax to digit
  
 convert_to_digit:
  
@@ -381,18 +390,6 @@ convert_to_digit:
  
 .invalid_char:
  
-                mov             esi, invalid_char_msg
- 
-                mov             edx, invalid_char_msg_size
- 
-                call            print_string
- 
-                call            write_char
- 
-                mov             al, 0x0a
- 
-                call            write_char
- 
                 mov             eax, 0xFF ; 0xFF -- special value means invalid char parsed
  
                 ret
@@ -404,7 +401,6 @@ convert_to_digit:
                 ret
  
  
- 
 .upper_letter:
  
                 sub             eax, "A"
@@ -412,7 +408,6 @@ convert_to_digit:
                 add             eax, 10
  
                 ret
- 
  
  
 .letter:
@@ -423,6 +418,8 @@ convert_to_digit:
  
                 ret
  
+ 
+; digit in eax, number begin in edi
  
 add_digit:
  
@@ -435,7 +432,14 @@ add_digit:
                 ret
  
  
-
+ 
+; read long number from src
+ 
+;    esi -- location for src
+ 
+;    edi -- location for output (long number)
+ 
+;    ecx -- length of long number in dwords
  
 read_long_hex:
  
@@ -443,11 +447,7 @@ read_long_hex:
  
                 push            edi
  
- 
- 
                 call            set_zero
- 
- 
  
                 ;read first hex-digit and check sign
  
@@ -457,10 +457,9 @@ read_long_hex:
  
                 js              exit
  
-                cmp             eax, 0x0a
+                cmp             eax, 0
  
                 je              .done
- 
  
  
                 cmp             eax, "-"
@@ -479,15 +478,13 @@ read_long_hex:
  
                 js              exit
  
-                cmp             eax, 0x0a
+                cmp             eax, 0
  
                 je              .done
  
 .not_sign:
  
                 call            convert_to_digit
- 
- 
  
                 cmp             eax, 0xFF
  
@@ -523,6 +520,12 @@ read_long_hex:
  
  
  
+; write long number to stdout
+ 
+;    edi -- argument (long number)
+ 
+;    ecx -- length of long number in dwords
+ 
 write_long_dec:
  
                 push            eax
@@ -539,11 +542,7 @@ write_long_dec:
  
                 sub             esp, eax
  
- 
- 
-                mov             esi, ebp
- 
- 
+                mov             eax, ebp
  
 .loop:
  
@@ -553,9 +552,9 @@ write_long_dec:
  
                 add             edx, "0"
  
-                dec             esi
+                dec             eax
  
-                mov             [esi], dl
+                mov             [eax], dl
  
                 call            is_zero
  
@@ -565,7 +564,7 @@ write_long_dec:
  
                 mov             edx, ebp
  
-                sub             edx, esi
+                sub             edx, eax
  
                 call            print_string
  
@@ -583,7 +582,18 @@ write_long_dec:
  
  
  
+; read one char from stdin
+ 
+; result:
+ 
+;    eax == -1 if error occurs
+ 
+;    eax \in [0; 255] if OK
+ 
 read_char_hex:
+                ; ebx -- descriptor
+                ; ecx -- dst for read bytes
+                ; edx -- number of bytes
  
                 push            ecx
  
@@ -591,31 +601,9 @@ read_char_hex:
  
                 push            ebx
  
+                mov             al, byte[esi]
  
-                sub             esp, 1
- 
-                mov             eax, 3
- 
-                xor             ebx, ebx
- 
-                mov             ecx, esp
- 
-                mov             edx, 1
- 
-                int             0x80
- 
- 
- 
-                cmp             eax, 1
- 
-                jne             .error
- 
-                xor             eax, eax
- 
-                mov             al, [esp]
- 
-                add             esp, 1
- 
+                inc             esi
  
                 pop             ebx
  
@@ -639,20 +627,23 @@ read_char_hex:
  
  
  
+; write one char to stdout, errors are ignored
+ 
+;    al -- char
  
 write_char:
-
+ 
+                ; ebx -- descriptor (rdi)
+                ; ecx -- src for write bytes (rsi)
+                ; edx -- number of bytes (rdx)
  
                 push            edi
- 
-                push            esi
  
                 push            esp
  
                 push            edx
  
                 push            eax
- 
  
                 push            ebx
  
@@ -661,23 +652,9 @@ write_char:
                 push            edx
  
  
-                sub             esp, 1
+                mov             [esi], al
  
-                mov             [esp], al
- 
- 
- 
-                mov             eax, 4 ; fd
- 
-                mov             ebx, 1 ; stdout
- 
-                mov             ecx, esp
- 
-                mov             edx, 1 ; number
- 
-                int             0x80
- 
-                add             esp, 1
+                inc              esi
  
  
                 pop             edx
@@ -686,14 +663,11 @@ write_char:
  
                 pop             ebx
  
- 
                 pop             eax
  
                 pop             edx
  
                 pop             esp
- 
-                pop             esi
  
                 pop             edi
  
@@ -705,46 +679,33 @@ exit:
  
                 mov             eax, 1
  
-                xor             edi, edi
+                xor             ebx, ebx
  
                 int             0x80
  
  
  
+; print string to dst (esi)
+ 
+;    eax -- string
+ 
+;    edx -- size
  
 print_string:
  
+                push            edx
                 push            eax
  
-                push            ebx
- 
-                push            ecx
- 
- 
-                mov             eax, 4;stdout
- 
-                mov             ebx, 1 ; fd
- 
-                mov             ecx, esi ; buffer
- 
-                int             0x80 ; syscall
- 
-                pop             ecx
- 
-                pop             ebx
+.loop:
+                push            eax
+                mov             eax, [eax]
+                call            write_char
+                pop             eax
+                inc             eax
+                dec             edx
+                jnz             .loop
  
                 pop             eax
+                pop             edx
  
                 ret
- 
- 
- 
- 
- 
-                section         .rodata
- 
-invalid_char_msg:
- 
-                db              "Invalid character: "
- 
-invalid_char_msg_size: equ             $ - invalid_char_msg
