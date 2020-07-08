@@ -5,7 +5,7 @@ section         .text
 print:
                 pushad
  
-                xor     ebp,  ebp
+                xor     	ebp,  ebp
  
                 sub             esp, 16
  
@@ -17,13 +17,13 @@ print:
  
                 call            read_long_hex ; read esi -> edi
  
-                call        correct
+                call        	correct
  
                 mov             esi, [esp + 20 + 32] ; esi <- dst
  
                 mov             al, byte[esi]
  
-                call        write_minus ; write '-' -> esi
+                call        	write_minus ; write '-' -> esi
  
                 call            write_long_dec ; write edi -> esi
  
@@ -73,65 +73,69 @@ is_zero:
  
 write_minus:
  
-                cmp     ebp, 0
+                cmp     	ebp, 0
  
-                jz      .label1
+                jz      	.label1
  
                 call            is_zero
  
-                jz      .label1
+                jz      	.label1
  
-                push    ecx
+                push    	ecx
  
-                mov     al,  "-"
+                mov     	al,  "-"
  
                 call            write_char
  
-                pop     ecx
+                pop     	ecx
 .label1:
  
                 ret
  
 correct:
                 push            edx
+ 
                 push            ebx
  
                 push            ecx
-;ebx -> 2^31
-                mov     ebx, 2147483648
  
-                mov     ecx, 3
+                ;ebx -> 2^31
+                mov     	ebx, 2147483648
+ 
+                mov     	ecx, 3
  
                 call            is_zero
  
-                jnz     .not__int128_t_min
+                jnz     	.not__int128_t_min
  
-                mov     edx, [edi + 12]
+                mov     	edx, [edi + 12]
  
-                cmp     edx, ebx
+                cmp     	edx, ebx
  
-                jne     .not__int128_t_min
+                jne     	.not__int128_t_min
  
-                mov     ebp, 1
+                mov     	ebp, 1
  
-                pop     ecx
+                pop     	ecx
  
-                jmp     .correct
+                jmp     	.correct
  
 .not__int128_t_min:
  
-                mov     edx, [edi + 12]
+                mov     	edx, [edi + 12]
  
                 test            edx, ebx
  
-                pop     ecx
+                pop     	ecx
  
                 jz              .correct
  
                 call            negate
 .correct:
-                pop     ebx
-                pop     edx
+                pop     	ebx
+ 
+                pop     	edx
+ 
                 ret
  
 ; negate number in two"s compliment code
@@ -158,7 +162,7 @@ negate:
  
                 mov             [edi], eax
  
-                add     edi,   4
+                add     	edi,   4
  
                 dec             ecx
  
@@ -595,21 +599,9 @@ read_char_hex:
                 ; ecx -- dst for read bytes
                 ; edx -- number of bytes
  
-                push            ecx
- 
-                push            edi
- 
-                push            ebx
- 
                 mov             al, byte[esi]
  
                 inc             esi
- 
-                pop             ebx
- 
-                pop             edi
- 
-                pop             ecx
  
                 ret
  
@@ -637,39 +629,9 @@ write_char:
                 ; ecx -- src for write bytes (rsi)
                 ; edx -- number of bytes (rdx)
  
-                push            edi
- 
-                push            esp
- 
-                push            edx
- 
-                push            eax
- 
-                push            ebx
- 
-                push            ecx
- 
-                push            edx
- 
- 
                 mov             [esi], al
  
                 inc              esi
- 
- 
-                pop             edx
- 
-                pop             ecx
- 
-                pop             ebx
- 
-                pop             eax
- 
-                pop             edx
- 
-                pop             esp
- 
-                pop             edi
  
                 ret
  
