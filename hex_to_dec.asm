@@ -45,8 +45,8 @@ section .text
  
 ;без обработки ошибок, стало проще
         cmp    bl, 'A'
-        jg     .letter
-        jng    .number
+        jge     .letter
+        jl    .number
  
 .repeat_convertion:
         mov    edi, [number_of_digits]
