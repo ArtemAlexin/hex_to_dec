@@ -1,673 +1,272 @@
-section         .text
- 
-                global          print
- 
-print:
-                pushad
- 
-                xor     	ebp,  ebp
- 
-                sub             esp, 16
- 
-                mov             edi, esp
- 
-                mov             ecx, 4
- 
-                mov             esi, [esp + 24 + 32] ; esi <- src
- 
-                call            read_long_hex ; read esi -> edi
- 
-                call        	correct
- 
-                mov             esi, [esp + 20 + 32] ; esi <- dst
- 
-                mov             al, byte[esi]
- 
-                call        	write_minus ; write '-' -> esi
- 
-                call            write_long_dec ; write edi -> esi
- 
- 
-                mov             eax, 0
- 
-                call            write_char
- 
- 
-                add             esp, 16
- 
-                popad
- 
-                ret
- 
- 
-; checks if a long number is a zero
- 
-;    edi -- argument (long number)
- 
-;    ecx -- length of long number in qwords
- 
-; result:
- 
-;    ZF=1 if zero
- 
-is_zero:
- 
-                push            eax
- 
-                push            edi
- 
-                push            ecx
- 
-                xor             eax, eax
- 
-                rep scasd
- 
- 
-                pop             ecx
- 
-                pop             edi
- 
-                pop             eax
- 
-                ret
- 
-write_minus:
- 
-                cmp     	ebp, 0
- 
-                jz      	.label1
- 
-                call            is_zero
- 
-                jz      	.label1
- 
-                push    	ecx
- 
-                mov     	al,  "-"
- 
-                call            write_char
- 
-                pop     	ecx
-.label1:
- 
-                ret
- 
-correct:
-                push            edx
- 
-                push            ebx
- 
-                push            ecx
- 
-                ;ebx -> 2^31
-                mov     	ebx, 2147483648
- 
-                mov     	ecx, 3
- 
-                call            is_zero
- 
-                jnz     	.not__int128_t_min
- 
-                mov     	edx, [edi + 12]
- 
-                cmp     	edx, ebx
- 
-                jne     	.not__int128_t_min
- 
-                mov     	ebp, 1
- 
-                pop     	ecx
- 
-                jmp     	.correct
- 
-.not__int128_t_min:
- 
-                mov     	edx, [edi + 12]
- 
-                test            edx, ebx
- 
-                pop     	ecx
- 
-                jz              .correct
- 
-                call            negate
-.correct:
-                pop     	ebx
- 
-                pop     	edx
- 
-                ret
- 
-; negate number in two"s compliment code
- 
-;   edi -- address of long number
- 
-;   ecx -- length of number
- 
-;   ebp -- sign
- 
-negate:
- 
-                ;~number
- 
-                push            edi
- 
-                push            ecx
- 
+section .data
+;для статических штук решил не использовать регистры, потому что их мало и это очень неудобно
+    number_of_digits:    dd 0 ;в ней будет хранится количество цифр
+ 
+    number_pointer:    times 4 dd 0 ;заполнить нулями, оказывается можно так просто
+ 
+    shoud_be_negate:  db 0
+ 
+section .text
+        global print
+ 
+    print:
+        pushad
+;указывает на src
+        call  get_source_begin
+;ecx - сдвиг относительно адреса(используя такой подход мы сразу и количество посчитаем)
+        xor   ecx, ecx
+.char_counter:
+        call  read_char
+        cmp   bl, 0
+        jnz   .char_counter
+        dec   ecx
+        mov   [number_of_digits], ecx
+ 
+;надо обработать минус в начале
+        call   get_source_begin
+        mov    bl, byte[eax]
+        cmp    bl, '-'
+        jne    .not_invert
+ 
+        call negate_number
+        ;посчитали лишний минус
+        mov    ecx, -1
+        call   change_number_count
+ 
+.not_invert:
+        xor    ecx, ecx
+ 
+.parse:
+        call   get_source_begin
+        add    eax, [shoud_be_negate]
+        mov    bl, byte [eax+ecx]
+        cmp    bl, 0
+        jz     .parsed
+ 
+;без обработки ошибок, стало проще
+        cmp    bl, 'A'
+        jg     .letter
+        jng    .number
+ 
+.repeat_convertion:
+        mov    edi, [number_of_digits]
+        call   calc_idx
+        push   ecx
+        push   ebx
+        call   move_and_zeroize
+;цикл do-while
 .loop:
- 
-                mov             eax, [edi]
- 
-                not             eax
- 
-                mov             [edi], eax
- 
-                add     	edi,   4
- 
-                dec             ecx
- 
-                jnz             .loop
- 
-                pop             ecx
- 
-                pop             edi
- 
-                clc
- 
-                ;number + 1
- 
-                mov             eax, 1
- 
-                call            add_long_short
- 
-                not             ebp
- 
-                ret
- 
- 
-; adds 32-bit number to long number
- 
-;    edi -- address of summand #1 (long number)
- 
-;    eax -- summand #2 (32-bit unsigned)
- 
-;    ecx -- length of long number in qwords
- 
-; result:
- 
-;    sum is written to rdi
- 
-add_long_short:
- 
-                push            edi
- 
-                push            ecx
- 
-                push            edx
- 
-                xor             edx, edx
- 
-.loop:
- 
-                add             [edi], eax
- 
-                adc             edx, 0
- 
-                mov             eax, edx
- 
-                xor             edx, edx
- 
-                add             edi, 4
- 
-                dec             ecx
- 
-                jnz             .loop
- 
-                pop             edx
- 
-                pop             ecx
- 
-                pop             edi
- 
-                ret
- 
- 
- 
-; multiplies long number by a short
- 
-;    edi -- address of multiplier #1 (long number)
- 
-;    ebx -- multiplier #2 (32-bit unsigned)
- 
-;    ecx -- length of long number in qwords
- 
-; result:
- 
-;    product is written to edi
- 
-mul_long_short:
- 
-                push            eax
- 
-                push            edi
- 
-                push            ecx
- 
-                push            esi
- 
-                xor             esi, esi
- 
-.loop:
- 
-                mov             eax, [edi]
- 
-                mul             ebx
- 
-                add             eax, esi
- 
-                adc             edx, 0
- 
-                mov             [edi], eax
- 
-                add             edi, 4
- 
-                mov             esi, edx
- 
-                dec             ecx
- 
-                jnz             .loop
- 
-                pop             esi
- 
-                pop             ecx
- 
-                pop             edi
- 
-                pop             eax
- 
-                ret
- 
- 
- 
-; divides long number by a short
- 
-;    edi -- address of dividend (long number)
- 
-;    ebx -- divisor (32-bit unsigned)
- 
-;    ecx -- length of long number in qwords
- 
-; result:
- 
-;    quotient is written to edi
- 
-;    edx -- remainder
- 
-div_long_short:
- 
-                push            edi
- 
-                push            eax
- 
-                push            ecx
- 
-                lea             edi, [edi + 4 * ecx - 4]
- 
-                xor             edx, edx
- 
-.loop:
- 
-                mov             eax, [edi]
- 
-                div             ebx
- 
-                mov             [edi], eax
- 
-                sub             edi, 4
- 
-                dec             ecx
- 
-                jnz             .loop
- 
-                pop             ecx
- 
-                pop             eax
- 
-                pop             edi
- 
-                ret
- 
- 
-; assigns a zero to long number
- 
-;    edi -- argument (long number)
- 
-;    ecx -- length of long number in dwords
- 
-set_zero:
- 
-                push            eax
- 
-                push            edi
- 
-                push            ecx
- 
-                xor             eax, eax
- 
-                rep stosd
- 
-                pop             ecx
- 
-                pop             edi
- 
-                pop             eax
- 
-                ret
- 
-; convert eax to digit
- 
-convert_to_digit:
- 
-                cmp             eax, "0"
- 
-                jb              .invalid_char
- 
-                cmp             eax, "9"
- 
-                jbe             .digit
- 
-                cmp             eax, "A"
- 
-                jb              .invalid_char
- 
-                cmp             eax, "F"
- 
-                jbe             .upper_letter
- 
-                cmp             eax, "a"
- 
-                jb              .invalid_char
- 
-                cmp             eax, "f"
- 
-                jbe             .letter
- 
-.invalid_char:
- 
-                mov             eax, 0xFF ; 0xFF -- special value means invalid char parsed
- 
-                ret
- 
-.digit:
- 
-                sub             eax, "0"
- 
-                ret
- 
- 
-.upper_letter:
- 
-                sub             eax, "A"
- 
-                add             eax, 10
- 
-                ret
- 
+        cmp    edi, 0
+        je     .end_of_loop
+        call   shift_number
+        dec    edi
+        jmp    .loop
+ 
+.end_of_loop:
+;насколько я понял, мне не стоит юзать никакие long_numbers, поэтому тупо работаю с 4 регистрами
+        add   [number_pointer+ 12], edx
+        adc   [number_pointer+ 8], ecx
+        adc   [number_pointer+ 4], ebx
+        adc   [number_pointer], eax
+        pop   ebx
+        pop   ecx
+;продолжаю парсить
+        inc   ecx
+        jmp   .parse
+ 
+.number:
+        sub   bl, '0'
+        jmp   .repeat_convertion
  
 .letter:
+        cmp   bl, 'F'
+        jg    .cond1
+        jmp   .cond2
+    .cond1:
+        sub   bl, 'a'
+        add   bl, 10
+        jmp  .repeat_convertion
+    .cond2:
+        sub   bl, 'A'
+        add   bl, 10
+        jmp   .repeat_convertion
  
-                sub             eax, "a"
+.parsed:
+        xor   esi, esi
+        call  is_negative
+        jnz   .not_inv
+        mov   eax, 0
+        mov   [shoud_be_negate], eax
+.inv:
+        call  mov_num_to_registers
+        call  inv_all
+        call  inc_128bit_num
+        call  mov_registers_to_num
+.not_inv:
+        mov   eax, [number_pointer]
+        test  eax, 0x80000000
+        jz    .convertion
  
-                add             eax, 10
+        ;не забываем про int_128_t_min, сначала забыл
+        cmp    eax, 0x80000000
+        jne    .not_int128_t_min
+        push   edi
+        push   ecx
+        mov    ecx, 3
+        lea    edi, [number_pointer + 4]
+        call   is_zero
+        jz     .int128_t_min
+        pop    ecx
+        pop    edi
+.not_int128_t_min:
+        call   negate_number
+        jmp    .inv
  
-                ret
+.int128_t_min:
+         call  negate_number
+         pop   ecx
+         pop   edi
  
+.convertion:
+        ;занулим, регистры, они нам понадобятся
+        ;погуглил как делать нормально перевод и реализовал
+        xor    ecx, ecx
+        xor    edx, edx
+        xor    ebx, ebx
+;пушу на стэк, чтобы при выводе удобно брать цифры, тоже нагуглил такой трюк
+.conv_loop:
+        mov    edi, 10
+        mov    eax, [number_pointer + ecx * 4]
+        div    edi
+        or     ebx, eax
+        mov    [number_pointer + ecx * 4], eax
+        inc    ecx
+        cmp    ecx, 4
+        jne    .conv_loop
+        inc    esi
+        push   edx
+        cmp    ebx, 0
+        jnz    .convertion
  
-; digit in eax, number begin in edi
+;записали количество десятичных цифр
+        mov    [number_of_digits], esi
+        mov    eax, [esp+32+4+esi*4]
+;индекс для вывода
+        xor    ecx, ecx
  
-add_digit:
+        call   is_negative
+        jnz    .write_num
  
-                mov             ebx, 16
+        mov    bl, '-'
+        mov    [eax], bl
+        inc    ecx
  
-                call            mul_long_short
+        push   ecx
+        mov    ecx, 1
+        call   change_number_count
+        pop    ecx
  
-                call            add_long_short
+.write_num:
+        pop    ebx
+        add    ebx, '0'
+        mov    [eax+ecx], ebx
  
-                ret
+        inc    ecx
+        cmp    ecx, [number_of_digits]
  
- 
- 
-; read long number from src
- 
-;    esi -- location for src
- 
-;    edi -- location for output (long number)
- 
-;    ecx -- length of long number in dwords
- 
-read_long_hex:
- 
-                push            ecx
- 
-                push            edi
- 
-                call            set_zero
- 
-                ;read first hex-digit and check sign
- 
-                call            read_char_hex
- 
-                or              eax, eax
- 
-                js              exit
- 
-                cmp             eax, 0
- 
-                je              .done
- 
- 
-                cmp             eax, "-"
- 
-                jne             .not_sign
- 
-                not             ebp
- 
-                ;read other hex-digits
- 
-.loop:
- 
-                call            read_char_hex
- 
-                or              eax, eax
- 
-                js              exit
- 
-                cmp             eax, 0
- 
-                je              .done
- 
-.not_sign:
- 
-                call            convert_to_digit
- 
-                cmp             eax, 0xFF
- 
-                je              .skip_loop
- 
-                call            add_digit
- 
-                jmp             .loop
- 
- 
+        jl     .write_num
 .done:
- 
-                pop             edi
- 
-                pop             ecx
- 
-                ret
- 
- 
-.skip_loop:
- 
-                call            read_char_hex
- 
-                or              eax, eax
- 
-                js              exit
- 
-                cmp             eax, 0x0a
- 
-                je              exit
- 
-                jmp             .skip_loop
- 
- 
- 
-; write long number to stdout
- 
-;    edi -- argument (long number)
- 
-;    ecx -- length of long number in dwords
- 
-write_long_dec:
- 
-                push            eax
- 
-                push            ecx
- 
-                push            ebp
- 
-                mov             eax, 20
- 
-                mul             ecx
- 
-                mov             ebp, esp
- 
-                sub             esp, eax
- 
-                mov             eax, ebp
- 
-.loop:
- 
-                mov             ebx, 10
- 
-                call            div_long_short
- 
-                add             edx, "0"
- 
-                dec             eax
- 
-                mov             [eax], dl
- 
-                call            is_zero
- 
-                jnz             .loop
- 
- 
- 
-                mov             edx, ebp
- 
-                sub             edx, eax
- 
-                call            print_string
- 
- 
- 
-                mov             esp, ebp
- 
-                pop             ebp
- 
-                pop             ecx
- 
-                pop             eax
- 
-                ret
- 
- 
- 
-; read one char from stdin
- 
-; result:
- 
-;    eax == -1 if error occurs
- 
-;    eax \in [0; 255] if OK
- 
-read_char_hex:
-                ; ebx -- descriptor
-                ; ecx -- dst for read bytes
-                ; edx -- number of bytes
- 
-                mov             al, byte[esi]
- 
-                inc             esi
- 
-                ret
- 
-.error:
- 
-                mov             eax, -1
- 
-                add             esp, 1
- 
-                pop             edi
- 
-                pop             ecx
- 
-                ret
- 
- 
- 
-; write one char to stdout, errors are ignored
- 
-;    al -- char
- 
-write_char:
- 
-                ; ebx -- descriptor (rdi)
-                ; ecx -- src for write bytes (rsi)
-                ; edx -- number of bytes (rdx)
- 
-                mov             [esi], al
- 
-                inc              esi
- 
-                ret
- 
- 
- 
-exit:
- 
-                mov             eax, 1
- 
-                xor             ebx, ebx
- 
-                int             0x80
- 
- 
- 
-; print string to dst (esi)
- 
-;    eax -- string
- 
-;    edx -- size
- 
-print_string:
- 
-                push            edx
-                push            eax
- 
-.loop:
-                push            eax
-                mov             eax, [eax]
-                call            write_char
-                pop             eax
-                inc             eax
-                dec             edx
-                jnz             .loop
- 
-                pop             eax
-                pop             edx
- 
-                ret
+        mov    bl, 0
+        mov    [eax+ecx], bl
+        popad
+        ret
+ 
+is_zero:
+        push    eax
+        push    edi
+        push    ecx
+        xor     eax, eax
+ 
+        rep scasd
+ 
+        pop     ecx
+        pop     edi
+        pop     eax
+        ret
+;ecx - shift, eax - adress
+read_char:
+        mov     bl, [eax + ecx]
+        inc     ecx
+        ret
+;eax -> *source
+get_source_begin:
+        ;+4 из-за того что вызываем функцию
+        mov     eax, [esp+32+4*2 + 4]
+        ret
+negate_number:
+        push    eax
+        mov     eax, 1
+        mov     [shoud_be_negate], eax
+        pop     eax
+        ret
+;number_of_digits+=ecx
+change_number_count:
+        push    ecx
+        push    eax
+        mov     eax, [number_of_digits]
+        add     eax, ecx
+        mov     [number_of_digits], eax
+        pop     eax
+        pop     ecx
+        ret
+move_and_zeroize:
+        xor     edx, edx
+        mov     dl, bl
+        xor     ecx, ecx
+        xor     ebx, ebx
+        xor     eax, eax
+        ret
+;edi - размер, ecx - индекс слева направо
+calc_idx:
+        sub     edi,  ecx
+        ;нумерация с нуля
+        dec     edi
+        ret
+;умножает число на 16
+shift_number:
+        shld    eax, ebx, 4
+        shld    ebx, ecx, 4
+        shld    ecx, edx, 4
+        shl     edx, 4
+        ret
+;устанавливает ZF
+is_negative:
+        push    eax
+        mov     eax, 1
+        cmp     [shoud_be_negate], eax
+        pop     eax
+        ret
+inv_all:
+        not     ebx
+        not     eax
+        not     edx
+        not     ecx
+        ret
+inc_128bit_num:
+        add     edx, 1
+        adc     ecx, 0
+        adc 	ebx, 0
+        adc     eax, 0
+        ret
+mov_num_to_registers:
+        mov     eax, [number_pointer]
+        mov     ebx, [number_pointer + 4]
+        mov     ecx, [number_pointer + 8]
+        mov     edx, [number_pointer + 12]
+        ret
+mov_registers_to_num:
+        mov     [number_pointer], eax
+        mov     [number_pointer + 4], ebx
+        mov     [number_pointer + 8], ecx
+        mov     [number_pointer + 12], edx
+        ret
